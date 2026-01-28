@@ -1,0 +1,208 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: entertainment
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kompose.cmd: ./kompose convert -o jellyfin.yaml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: jellyfin
+  name: jellyfin
+  namespace: entertainment
+spec:
+  ports:
+    - name: "8096"
+      port: 8096
+      targetPort: 8096
+    - name: "7359"
+      port: 7359
+      protocol: UDP
+      targetPort: 7359
+  selector:
+    io.kompose.service: jellyfin
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: ./kompose convert -o jellyfin.yaml
+    kompose.version: 1.37.0 (fb0539e64)
+  labels:
+    io.kompose.service: jellyfin
+  name: jellyfin
+  namespace: entertainment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: jellyfin
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: ./kompose convert -o jellyfin.yaml
+        kompose.version: 1.37.0 (fb0539e64)
+      labels:
+        io.kompose.service: jellyfin
+    spec:
+      containers:
+        - env:
+            - name: JELLYFIN_PublishedServerUrl
+              value: http://jellyfin.local
+          image: jellyfin/jellyfin
+          name: jellyfin
+          ports:
+            - containerPort: 8096
+              protocol: TCP
+            - containerPort: 7359
+              protocol: UDP
+          volumeMounts:
+            - mountPath: /config
+              name: jellyfin-claim0
+            - mountPath: /cache
+              name: jellyfin-claim1
+            - mountPath: /media
+              name: jellyfin-claim2
+            - mountPath: /media2
+              name: jellyfin-claim3
+              readOnly: true
+            - mountPath: /usr/local/share/fonts/custom
+              name: jellyfin-claim4
+              readOnly: true
+      restartPolicy: Always
+      volumes:
+        - name: jellyfin-claim0
+          persistentVolumeClaim:
+            claimName: jellyfin-claim0
+        - name: jellyfin-claim1
+          persistentVolumeClaim:
+            claimName: jellyfin-claim1
+        - name: jellyfin-claim2
+          persistentVolumeClaim:
+            claimName: jellyfin-claim2
+        - name: jellyfin-claim3
+          persistentVolumeClaim:
+            claimName: jellyfin-claim3
+            readOnly: true
+        - name: jellyfin-claim4
+          persistentVolumeClaim:
+            claimName: jellyfin-claim4
+            readOnly: true
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: jellyfin-claim0
+  name: jellyfin-claim0
+  namespace: entertainment
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: jellyfin-claim1
+  name: jellyfin-claim1
+  namespace: entertainment
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    io.kompose.service: jellyfin-claim2
+  name: jellyfin-claim2
+  namespace: entertainment
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /mnt/media-disk/jellyfin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-claim2
+  namespace: entertainment
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: jellyfin-claim3
+  name: jellyfin-claim3
+  namespace: entertainment
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: jellyfin-claim4
+  name: jellyfin-claim4
+  namespace: entertainment
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jellyfin-ingress
+  namespace: entertainment
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: jellyfin.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jellyfin
+            port:
+              number: 8096
+---
