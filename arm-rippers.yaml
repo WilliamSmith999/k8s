@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: utilities
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arm-rippers
+  namespace: utilities
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arm-rippers
+  template:
+    metadata:
+      labels:
+        app: arm-rippers
+    spec:
+      initContainers:
+        - name: fix-perms
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /home/arm /etc/arm/config"]
+          volumeMounts:
+            - name: home-arm
+              mountPath: /home/arm
+            - name: music
+              mountPath: /home/arm/Music
+            - name: logs
+              mountPath: /home/arm/logs
+            - name: media
+              mountPath: /home/arm/media
+            - name: config
+              mountPath: /etc/arm/config
+            - name: sr0
+              mountPath: /dev/sr0
+
+      containers:
+        - name: arm-rippers
+          image: automaticrippingmachine/automatic-ripping-machine:latest
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ARM_UID
+              value: "1000"
+            - name: ARM_GID
+              value: "1000"
+          volumeMounts:
+            - name: home-arm
+              mountPath: /home/arm
+            - name: music
+              mountPath: /home/arm/Music
+            - name: logs
+              mountPath: /home/arm/logs
+            - name: media
+              mountPath: /home/arm/media
+            - name: config
+              mountPath: /etc/arm/config
+            - name: sr0
+              mountPath: /dev/sr0
+      volumes:
+        - name: home-arm
+          persistentVolumeClaim:
+            claimName: arm-home
+        - name: music
+          persistentVolumeClaim:
+            claimName: arm-music
+        - name: logs
+          persistentVolumeClaim:
+            claimName: arm-logs
+        - name: media
+          persistentVolumeClaim:
+            claimName: arm-media
+        - name: config
+          persistentVolumeClaim:
+            claimName: arm-config
+        - name: sr0
+          hostPath:
+            path: /dev/sr0
+            type: BlockDevice
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: arm-home
+  name: arm-home
+  namespace: utilities
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: arm-music
+  name: arm-music
+  namespace: utilities
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: arm-logs
+  name: arm-logs
+  namespace: utilities
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    io.kompose.service: arm-media
+  name: arm-media
+  namespace: entertainment
+spec:
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /mnt/media-disk/jellyfin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: arm-media
+  namespace: utilities
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    io.kompose.service: arm-config
+  name: arm-config
+  namespace: utilities
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arm-rippers
+  namespace: utilities
+spec:
+  selector:
+    app: arm-rippers
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: arm-rippers
+  namespace: utilities
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: arm.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: arm-rippers
+                port:
+                  number: 80
